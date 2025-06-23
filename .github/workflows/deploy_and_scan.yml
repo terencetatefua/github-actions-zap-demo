@@ -1,4 +1,4 @@
-name: Deploy to EC2 and Scan with OWASP ZAP
+name: Deploy and Scan with OWASP ZAP (No Docker)
 
 on:
   push:
@@ -35,22 +35,35 @@ jobs:
           nohup node app.js > app.log 2>&1 &
         EOF
 
-  scan:
+  zap-scan:
     needs: deploy
     runs-on: ubuntu-latest
 
     steps:
-    - name: OWASP ZAP Full Scan
-      id: zap
-      uses: zaproxy/action-full-scan@v0.12.0
-      with:
-        target: ${{ secrets.ZAP_TARGET_URL }}
-        fail_action: true
-        cmd_options: '-r report.html'
+    - name: Install Java and ZAP
+      run: |
+        sudo apt update
+        sudo apt install -y openjdk-11-jre-headless unzip wget
+        wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_Linux.zip
+        unzip ZAP_2.14.0_Linux.zip -d zap
+        echo "ZAP installed"
+
+    - name: Start ZAP Daemon
+      run: |
+        nohup ./zap/ZAP_2.14.0/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+        sleep 30  # wait for ZAP to initialize
+
+    - name: Run ZAP Active Scan
+      run: |
+        curl "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}"
+        sleep 60  # wait for scan to finish
+
+    - name: Generate ZAP Report
+      run: |
+        curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
 
     - name: Upload ZAP Report
-      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: zap-report
-        path: report.html
+        path: zap-report.html
