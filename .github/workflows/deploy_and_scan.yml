@@ -44,10 +44,10 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y openjdk-11-jre-headless unzip wget jq
-        wget https://sourceforge.net/projects/zaproxy/files/ZAP_2.14.0/ZAP_2.14.0_Linux.tar.gz/download -O ZAP.tar.gz
+        wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_unix.tar.gz -O zap.tar.gz
         mkdir zap
-        tar -xzf ZAP.tar.gz -C zap --strip-components=1
-        echo "✅ ZAP installed from SourceForge"
+        tar -xzf zap.tar.gz -C zap --strip-components=1
+        echo "✅ ZAP installed from GitHub Releases"
 
     - name: Start ZAP Daemon and Wait for Ready
       run: |
