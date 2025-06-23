@@ -1,4 +1,4 @@
-name: Deploy and Scan with OWASP ZAP (No Docker)
+name: Deploy and Scan with OWASP ZAP
 
 on:
   push:
@@ -47,7 +47,6 @@ jobs:
           wget https://github.com/zaproxy/zaproxy/releases/download/w2025-06-23/ZAP_WEEKLY_D-2025-06-23.zip -O zap.zip
           unzip zap.zip -d zap-dir
           chmod +x zap-dir/ZAP_*/zap.sh
-          echo "✅ ZAP downloaded and extracted"
 
       - name: Start ZAP Daemon
         run: |
@@ -58,67 +57,56 @@ jobs:
             -config api.addrs.addr.regex=true \
             > zap.log 2>&1 &
 
-          echo "⏳ Waiting for ZAP to become available..."
+          echo "⏳ Waiting for ZAP to be ready..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
               echo "✅ ZAP is ready."
               break
             fi
-            echo "⏳ Still waiting for ZAP... ($i)"
+            echo "Waiting... ($i)"
             sleep 5
           done
 
-          if ! curl -s http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
-            echo "❌ ZAP did not become ready in time."
-            cat zap.log
-            exit 1
-          fi
-
-      - name: Run Active Scan
+      - name: Spider and Active Scan
         run: |
-          TARGET_URL=http://18.227.111.84:3000
-          echo "⚡ Starting ZAP scan against $TARGET_URL"
-          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=$TARGET_URL" | jq -r '.scan')
+          TARGET=http://${{ secrets.EC2_HOST }}:3000
+          echo "🌐 Spidering $TARGET..."
+          spider_id=$(curl -s "http://127.0.0.1:8090/JSON/spider/action/scan/?url=$TARGET" | jq -r '.scan')
 
-          if [ -z "$scan_id" ] || [ "$scan_id" == "null" ]; then
-            echo "❌ Failed to start scan. ZAP did not return a valid scan ID."
-            echo "ZAP Logs:"
-            cat zap.log
-            exit 1
-          fi
-
-          echo "✅ Scan started. Scan ID: $scan_id"
-          progress=0
-          while [[ "$progress" -lt 100 ]]; do
+          while [[ "$(curl -s "http://127.0.0.1:8090/JSON/spider/view/status/?scanId=$spider_id" | jq -r '.status')" -lt 100 ]]; do
+            echo "⏳ Spider in progress..."
             sleep 5
-            progress=$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')
-            echo "Scan progress: $progress%"
           done
 
-      - name: Generate ZAP Report
+          echo "🚨 Starting Active Scan..."
+          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=$TARGET" | jq -r '.scan')
+
+          while [[ "$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')" -lt 100 ]]; do
+            echo "⏳ Active scan in progress..."
+            sleep 5
+          done
+
+      - name: Generate ZAP HTML Report
         run: |
           curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
 
-      - name: Fail on Medium or High Findings
+      - name: Fail on Medium or High Alerts
         run: |
           summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
-          echo "ZAP Alerts Summary: $summary"
-
+          echo "ZAP Alert Summary: $summary"
           high=$(echo "$summary" | jq -r '.alertSummary.High')
           medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
 
           if [[ "$high" -gt 0 || "$medium" -gt 0 ]]; then
-            echo "❌ High or Medium alerts found. Failing the job."
+            echo "❌ High or Medium vulnerabilities found. Failing the pipeline."
             exit 1
           else
             echo "✅ No critical vulnerabilities found."
           fi
 
-      - name: Upload ZAP Report and Logs
+      - name: Upload ZAP Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-artifacts
-          path: |
-            zap-report.html
-            zap.log
+          name: zap-report
+          path: zap-report.html

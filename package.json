@@ -1,7 +1,6 @@
 {
-  "name": "vulnerable-node-app",
+  "name": "vulnerable-app",
   "version": "1.0.0",
-  "description": "A simple vulnerable web app for ZAP testing",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
