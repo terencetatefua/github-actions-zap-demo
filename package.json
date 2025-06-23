@@ -1,7 +1,7 @@
 {
   "name": "secure-node-app",
   "version": "1.0.0",
-  "description": "Demo Node.js app with intentional XSS",
+  "description": "Node.js app with intentional XSS for OWASP ZAP scanning",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"

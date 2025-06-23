@@ -1,4 +1,4 @@
-name: Deploy and Scan with OWASP ZAP
+name: Deploy and Scan with OWASP ZAP (No Docker)
 
 on:
   push:
@@ -37,13 +37,54 @@ jobs:
   zap-scan:
     needs: deploy
     runs-on: ubuntu-latest
+
     steps:
-      - name: Run OWASP ZAP Full Scan
-        uses: zaproxy/action-full-scan@v0.12.0
-        with:
-          target: ${{ secrets.ZAP_TARGET_URL }}
-          fail_action: true
-          cmd_options: '-a'
+      - name: Install Java, ZAP, and jq
+        run: |
+          sudo apt update
+          sudo apt install -y openjdk-11-jre-headless wget unzip jq
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Core.zip -O zap.zip
+          unzip zap.zip -d zap
+          echo "✅ ZAP installed"
+
+      - name: Start ZAP Daemon
+        run: |
+          nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8090/; then break; fi
+            sleep 1
+          done
+
+      - name: Run ZAP Active Scan
+        run: |
+          echo "⚡ Starting ZAP scan against ${{ secrets.ZAP_TARGET_URL }}"
+          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
+          echo "Scan ID: $scan_id"
+
+          progress=0
+          while [[ $progress -lt 100 ]]; do
+            sleep 5
+            progress=$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')
+            echo "Scan progress: $progress%"
+          done
+
+      - name: Generate ZAP Report
+        run: |
+          curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
+
+      - name: Fail if High/Medium Risk Found
+        run: |
+          summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
+          echo "Summary: $summary"
+          high=$(echo "$summary" | jq -r '.alertSummary.High')
+          medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
+
+          if [[ "$high" -gt 0 || "$medium" -gt 0 ]]; then
+            echo "❌ ZAP found high or medium risk vulnerabilities."
+            exit 1
+          else
+            echo "✅ No high or medium vulnerabilities found."
+          fi
 
       - name: Upload ZAP Report
         if: always()
