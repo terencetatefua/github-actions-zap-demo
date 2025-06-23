@@ -13,6 +13,7 @@ app.get('/vuln', (req, res) => {
   res.send(`<h1>Hello ${name}</h1>`); // ⚠️ No sanitization
 });
 
-app.listen(port, () => {
-  console.log(`App running at http://localhost:${port}`);
+// ✅ Bind to 0.0.0.0 so app is accessible externally (via port 3000)
+app.listen(port, '0.0.0.0', () => {
+  console.log(`App running at http://0.0.0.0:${port}`);
 });
