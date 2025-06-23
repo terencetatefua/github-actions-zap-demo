@@ -1,94 +1,12 @@
-name: Deploy and Scan with OWASP ZAP (No Docker)
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set Up SSH
-      run: |
-        mkdir -p ~/.ssh
-        printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-    - name: Deploy Node App to EC2
-      run: |
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-          pkill node || true
-          rm -rf ~/app
-          mkdir -p ~/app
-        EOF
-
-        scp -r ./* ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app
-
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-          cd ~/app
-          npm install
-          nohup node app.js > app.log 2>&1 &
-        EOF
-
-  zap-scan:
-    needs: deploy
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Install Java, jq, and ZAP
-      run: |
-        sudo apt update
-        sudo apt install -y openjdk-11-jre-headless unzip wget jq
-        wget https://github.com/zaproxy/zaproxy/releases/download/v2.16.1/ZAP_2_16_1_unix.tar.gz
-        mkdir zap
-        tar -xzf ZAP_2_16_1_unix.tar.gz -C zap --strip-components=1
-        echo "✅ ZAP installed"
-
-    - name: Start ZAP Daemon and Wait for Ready
-      run: |
-        nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
-        for i in {1..30}; do
-          if curl -s http://127.0.0.1:8090/; then break; fi
-          sleep 1
-        done
-
-    - name: Run ZAP Active Scan and Wait for Completion
-      run: |
-        scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
-        echo "Scan ID: $scan_id"
-        status=0
-        while [[ $status -lt 100 ]]; do
-          sleep 5
-          status=$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')
-          echo "Scan progress: $status%"
-        done
-
-    - name: Generate ZAP Report
-      run: |
-        curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
-
-    - name: Fail if High or Medium Risk Alerts Found
-      run: |
-        echo "Checking for High or Medium severity alerts..."
-        summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
-        echo "Alert Summary: $summary"
-        high=$(echo "$summary" | jq -r '.alertSummary.High')
-        medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
-        if [ "$high" -gt 0 ] || [ "$medium" -gt 0 ]; then
-          echo "❌ ZAP found High or Medium risk vulnerabilities."
-          exit 1
-        else
-          echo "✅ No High or Medium alerts found."
-        fi
-
-    - name: Upload ZAP Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-report
-        path: zap-report.html
+{
+  "name": "secure-node-app",
+  "version": "1.0.0",
+  "description": "XSS demo app for OWASP ZAP CI testing",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

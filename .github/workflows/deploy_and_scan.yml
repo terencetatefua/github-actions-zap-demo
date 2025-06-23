@@ -44,10 +44,10 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y openjdk-11-jre-headless unzip wget jq
-        wget https://github.com/zaproxy/zaproxy/releases/latest/download/ZAP_WEEKLY_LINUX.tar.gz
+        wget https://sourceforge.net/projects/zaproxy/files/ZAP_2.14.0/ZAP_2.14.0_Linux.tar.gz/download -O ZAP.tar.gz
         mkdir zap
-        tar -xvzf ZAP_WEEKLY_LINUX.tar.gz -C zap --strip-components=1
-        echo "ZAP installed"
+        tar -xzf ZAP.tar.gz -C zap --strip-components=1
+        echo "✅ ZAP installed from SourceForge"
 
     - name: Start ZAP Daemon and Wait for Ready
       run: |
@@ -61,7 +61,6 @@ jobs:
       run: |
         scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
         echo "Scan ID: $scan_id"
-
         status=0
         while [[ $status -lt 100 ]]; do
           sleep 5
@@ -78,10 +77,8 @@ jobs:
         echo "Checking for High or Medium severity alerts..."
         summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
         echo "Alert Summary: $summary"
-
         high=$(echo "$summary" | jq -r '.alertSummary.High')
         medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
-
         if [ "$high" -gt 0 ] || [ "$medium" -gt 0 ]; then
           echo "❌ ZAP found High or Medium risk vulnerabilities."
           exit 1
