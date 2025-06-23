@@ -1,7 +1,7 @@
 {
-  "name": "secure-node-app",
+  "name": "vulnerable-node-app",
   "version": "1.0.0",
-  "description": "Node.js app with intentional XSS for OWASP ZAP scanning",
+  "description": "A simple vulnerable web app for ZAP testing",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"

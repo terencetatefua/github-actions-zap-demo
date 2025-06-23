@@ -30,6 +30,8 @@ jobs:
 
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             cd ~/app
+            sudo apt update
+            sudo apt install -y nodejs npm
             npm install
             nohup node app.js > app.log 2>&1 &
           EOF
@@ -42,14 +44,15 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y openjdk-11-jre-headless wget unzip jq
-          # 🔥 Update the working download URL here
           wget https://github.com/zaproxy/zaproxy/releases/download/w2025-06-23/ZAP_WEEKLY_D-2025-06-23.zip -O zap.zip
-          unzip zap.zip -d zap
-          echo "✅ ZAP installed"
+          unzip zap.zip -d zap-dir
+          chmod +x zap-dir/ZAP_*/zap.sh
+          echo "✅ ZAP downloaded and extracted"
 
       - name: Start ZAP Daemon
         run: |
-          nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+          ZAP_PATH=$(find zap-dir -name zap.sh | head -n 1)
+          nohup $ZAP_PATH -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true > zap.log 2>&1 &
           echo "⏳ Waiting for ZAP to start..."
           sleep 20
 
