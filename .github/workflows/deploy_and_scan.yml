@@ -52,21 +52,42 @@ jobs:
       - name: Start ZAP Daemon
         run: |
           ZAP_PATH=$(find zap-dir -name zap.sh | head -n 1)
-          nohup $ZAP_PATH -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true > zap.log 2>&1 &
-          echo "⏳ Waiting for ZAP to start..."
-          sleep 20
+          nohup $ZAP_PATH -daemon -host 127.0.0.1 -port 8090 \
+            -config api.disablekey=true \
+            -config api.addrs.addr.name=.* \
+            -config api.addrs.addr.regex=true \
+            > zap.log 2>&1 &
 
-      - name: Run Active Scan
-        run: |
-          echo "⚡ Starting ZAP scan against ${{ secrets.ZAP_TARGET_URL }}"
-          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
+          echo "⏳ Waiting for ZAP to become available..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
+              echo "✅ ZAP is ready."
+              break
+            fi
+            echo "⏳ Still waiting for ZAP... ($i)"
+            sleep 5
+          done
 
-          if [ -z "$scan_id" ] || [ "$scan_id" == "null" ]; then
-            echo "❌ Failed to start scan. ZAP did not return a scan ID."
+          if ! curl -s http://127.0.0.1:8090/JSON/core/view/version/ > /dev/null; then
+            echo "❌ ZAP did not become ready in time."
+            cat zap.log
             exit 1
           fi
 
-          echo "Scan ID: $scan_id"
+      - name: Run Active Scan
+        run: |
+          TARGET_URL=http://18.227.111.84:3000
+          echo "⚡ Starting ZAP scan against $TARGET_URL"
+          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=$TARGET_URL" | jq -r '.scan')
+
+          if [ -z "$scan_id" ] || [ "$scan_id" == "null" ]; then
+            echo "❌ Failed to start scan. ZAP did not return a valid scan ID."
+            echo "ZAP Logs:"
+            cat zap.log
+            exit 1
+          fi
+
+          echo "✅ Scan started. Scan ID: $scan_id"
           progress=0
           while [[ "$progress" -lt 100 ]]; do
             sleep 5
@@ -93,9 +114,11 @@ jobs:
             echo "✅ No critical vulnerabilities found."
           fi
 
-      - name: Upload ZAP Report
+      - name: Upload ZAP Report and Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: zap-report.html
+          name: zap-artifacts
+          path: |
+            zap-report.html
+            zap.log
