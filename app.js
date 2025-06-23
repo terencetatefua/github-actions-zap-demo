@@ -10,10 +10,10 @@ app.get('/', (req, res) => {
 // ❌ Reflected XSS vulnerability
 app.get('/vuln', (req, res) => {
   const name = req.query.name;
-  res.send(`<h1>Hello ${name}</h1>`); // ⚠️ No sanitization
+  res.send(`<h1>Hello ${name}</h1>`); // ⚠️ Unsanitized input
 });
 
-// ✅ Bind to all interfaces for EC2 + ZAP access
+// Listen on all interfaces (important for EC2)
 app.listen(port, '0.0.0.0', () => {
   console.log(`App running at http://0.0.0.0:${port}`);
 });
