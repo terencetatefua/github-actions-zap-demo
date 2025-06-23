@@ -1,0 +1,54 @@
+name: Deploy to EC2 and Scan with OWASP ZAP
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-2  # ✅ Your chosen AWS region
+
+    - name: Set Up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy Node App to EC2
+      run: |
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          pkill node || true
+          rm -rf ~/app
+          mkdir -p ~/app
+        EOF
+
+        scp -r ./* ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app
+
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ~/app
+          npm install
+          nohup node app.js > app.log 2>&1 &
+        EOF
+
+  scan:
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: OWASP ZAP Full Scan
+      uses: zaproxy/action-full-scan@v0.12.0
+      with:
+        target: ${{ secrets.ZAP_TARGET_URL }}
+        fail_action: true

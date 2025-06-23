@@ -1,0 +1,12 @@
+{
+  "name": "secure-node-app",
+  "version": "1.0.0",
+  "description": "Node.js app with intentional XSS for OWASP ZAP scanning",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
