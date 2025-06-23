@@ -40,29 +40,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install Java and ZAP
+    - name: Install Java, jq, and ZAP
       run: |
         sudo apt update
-        sudo apt install -y openjdk-11-jre-headless unzip wget
-        wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_Linux.zip
-        unzip ZAP_2.14.0_Linux.zip -d zap
+        sudo apt install -y openjdk-11-jre-headless unzip wget jq
+        wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.1/ZAP_2.14.1_Linux.zip
+        unzip ZAP_2.14.1_Linux.zip -d zap
         echo "ZAP installed"
 
     - name: Start ZAP Daemon
       run: |
-        nohup ./zap/ZAP_2.14.0/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
-        sleep 30  # wait for ZAP to initialize
+        nohup ./zap/ZAP_2.14.1/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+        sleep 30
 
     - name: Run ZAP Active Scan
       run: |
         curl "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}"
-        sleep 60  # wait for scan to finish
+        sleep 60
 
     - name: Generate ZAP Report
       run: |
         curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
 
+    - name: Fail if High or Medium Risk Alerts Found
+      run: |
+        echo "Checking for High or Medium severity alerts..."
+        summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
+        echo "Alert Summary: $summary"
+
+        high=$(echo "$summary" | jq -r '.alertSummary.High')
+        medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
+
+        if [ "$high" -gt 0 ] || [ "$medium" -gt 0 ]; then
+          echo "❌ ZAP found High or Medium risk vulnerabilities."
+          exit 1
+        else
+          echo "✅ No High or Medium alerts found."
+        fi
+
     - name: Upload ZAP Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: zap-report

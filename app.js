@@ -7,13 +7,13 @@ app.get('/', (req, res) => {
   res.send('<h1>Welcome to Secure Node App</h1>');
 });
 
-// ❌ Vulnerable to reflected XSS
+// ❌ Reflected XSS vulnerability
 app.get('/vuln', (req, res) => {
   const name = req.query.name;
-  res.send(`<h1>Hello ${name}</h1>`); // ⚠️ No sanitization
+  res.send(`<h1>Hello ${name}</h1>`); // ⚠️ unsanitized input
 });
 
-// ✅ Bind to 0.0.0.0 so app is accessible externally (via port 3000)
+// ✅ Bind to all interfaces so EC2 can expose it
 app.listen(port, '0.0.0.0', () => {
   console.log(`App running at http://0.0.0.0:${port}`);
 });
