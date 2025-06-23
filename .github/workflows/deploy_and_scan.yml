@@ -1,4 +1,4 @@
-name: Deploy and Scan with OWASP ZAP
+name: Deploy and Scan with OWASP ZAP (No Docker)
 
 on:
   push:
@@ -7,94 +7,92 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set Up SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      - name: Set Up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Deploy Node App to EC2
-      run: |
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-          pkill node || true
-          rm -rf ~/app
-          mkdir -p ~/app
-        EOF
+      - name: Deploy App to EC2
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            pkill node || true
+            rm -rf ~/app
+            mkdir ~/app
+          EOF
 
-        scp -r ./* ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app
+          scp -r ./* ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app
 
-        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd ~/app
-          npm install
-          nohup node app.js > app.log 2>&1 &
-        EOF
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            cd ~/app
+            npm install
+            nohup node app.js > app.log 2>&1 &
+          EOF
 
   zap-scan:
     needs: deploy
     runs-on: ubuntu-latest
-
     steps:
-    - name: Install Java, jq, and ZAP
-      run: |
-        sudo apt update
-        sudo apt install -y openjdk-11-jre-headless wget tar jq
-        wget https://github.com/zaproxy/zaproxy/releases/download/w2025-06-23/ZAP_WEEKLY_D-2025-06-23.tar.gz -O zap.tar.gz
-        mkdir zap
-        tar -xvzf zap.tar.gz -C zap --strip-components=1
-        echo "✅ ZAP installed"
+      - name: Install Java, jq, and ZAP
+        run: |
+          sudo apt update
+          sudo apt install -y openjdk-11-jre-headless wget unzip jq
+          # 🔥 Update the working download URL here
+          wget https://github.com/zaproxy/zaproxy/releases/download/w2025-06-23/ZAP_WEEKLY_D-2025-06-23.zip -O zap.zip
+          unzip zap.zip -d zap
+          echo "✅ ZAP installed"
 
-    - name: Start ZAP Daemon
-      run: |
-        nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
-        for i in {1..30}; do
-          if curl -s http://127.0.0.1:8090/; then break; fi
-          sleep 1
-        done
-        echo "✅ ZAP Daemon is ready"
+      - name: Start ZAP Daemon
+        run: |
+          nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+          echo "⏳ Waiting for ZAP to start..."
+          sleep 20
 
-    - name: Run ZAP Active Scan
-      run: |
-        echo "⚡ Starting ZAP scan against ${{ secrets.ZAP_TARGET_URL }}"
-        scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
-        if [[ -z "$scan_id" || "$scan_id" == "null" ]]; then
-          echo "❌ Failed to start scan. ZAP did not return a scan ID."
-          exit 1
-        fi
-        echo "Scan ID: $scan_id"
+      - name: Run Active Scan
+        run: |
+          echo "⚡ Starting ZAP scan against ${{ secrets.ZAP_TARGET_URL }}"
+          scan_id=$(curl -s "http://127.0.0.1:8090/JSON/ascan/action/scan/?url=${{ secrets.ZAP_TARGET_URL }}" | jq -r '.scan')
 
-        progress=0
-        while [[ $progress -lt 100 ]]; do
-          sleep 5
-          progress=$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')
-          echo "Scan progress: $progress%"
-        done
+          if [ -z "$scan_id" ] || [ "$scan_id" == "null" ]; then
+            echo "❌ Failed to start scan. ZAP did not return a scan ID."
+            exit 1
+          fi
 
-    - name: Generate ZAP Report
-      run: |
-        curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
+          echo "Scan ID: $scan_id"
+          progress=0
+          while [[ "$progress" -lt 100 ]]; do
+            sleep 5
+            progress=$(curl -s "http://127.0.0.1:8090/JSON/ascan/view/status/?scanId=$scan_id" | jq -r '.status')
+            echo "Scan progress: $progress%"
+          done
 
-    - name: Fail if High or Medium Alerts Found
-      run: |
-        echo "🔍 Checking for High/Medium alerts..."
-        summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
-        echo "$summary" | jq .
-        high=$(echo "$summary" | jq -r '.alertSummary.High')
-        medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
-        if [ "$high" -gt 0 ] || [ "$medium" -gt 0 ]; then
-          echo "❌ High or Medium alerts found. Failing pipeline."
-          exit 1
-        fi
-        echo "✅ No High or Medium alerts found."
+      - name: Generate ZAP Report
+        run: |
+          curl "http://127.0.0.1:8090/OTHER/core/other/htmlreport/" -o zap-report.html
 
-    - name: Upload ZAP Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-report
-        path: zap-report.html
+      - name: Fail on Medium or High Findings
+        run: |
+          summary=$(curl -s "http://127.0.0.1:8090/JSON/core/view/alertsSummary/")
+          echo "ZAP Alerts Summary: $summary"
+
+          high=$(echo "$summary" | jq -r '.alertSummary.High')
+          medium=$(echo "$summary" | jq -r '.alertSummary.Medium')
+
+          if [[ "$high" -gt 0 || "$medium" -gt 0 ]]; then
+            echo "❌ High or Medium alerts found. Failing the job."
+            exit 1
+          else
+            echo "✅ No critical vulnerabilities found."
+          fi
+
+      - name: Upload ZAP Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-report.html
