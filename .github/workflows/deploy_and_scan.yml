@@ -46,7 +46,6 @@ jobs:
       with:
         target: ${{ secrets.ZAP_TARGET_URL }}
         fail_action: true
-        format: html
         cmd_options: '-r report.html'
 
     - name: Upload ZAP Report

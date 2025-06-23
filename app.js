@@ -7,10 +7,10 @@ app.get('/', (req, res) => {
   res.send('<h1>Welcome to Secure Node App</h1>');
 });
 
-// Intentional XSS vulnerability
+// ❌ Reflected XSS vulnerability
 app.get('/vuln', (req, res) => {
   const name = req.query.name;
-  res.send(`<h1>Hello ${name}</h1>`); // 🔥 Vulnerable: unsanitized input
+  res.send(`<h1>Hello ${name}</h1>`); // ⚠️ Input not sanitized!
 });
 
 app.listen(port, () => {
