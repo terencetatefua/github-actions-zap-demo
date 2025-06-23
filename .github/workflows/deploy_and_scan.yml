@@ -12,13 +12,6 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-2  # ✅ Your chosen AWS region
-
     - name: Set Up SSH
       run: |
         mkdir -p ~/.ssh
@@ -52,4 +45,10 @@ jobs:
       with:
         target: ${{ secrets.ZAP_TARGET_URL }}
         fail_action: true
-## added secret
+
+    - name: Upload ZAP Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-report
+        path: owasp-zap-report.html
