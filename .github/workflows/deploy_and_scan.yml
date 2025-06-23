@@ -44,13 +44,14 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y openjdk-11-jre-headless unzip wget jq
-        wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.1/ZAP_2.14.1_Linux.zip
-        unzip ZAP_2.14.1_Linux.zip -d zap
+        wget https://github.com/zaproxy/zaproxy/releases/latest/download/ZAP_WEEKLY_LINUX.tar.gz
+        mkdir zap
+        tar -xvzf ZAP_WEEKLY_LINUX.tar.gz -C zap --strip-components=1
         echo "ZAP installed"
 
     - name: Start ZAP Daemon
       run: |
-        nohup ./zap/ZAP_2.14.1/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
+        nohup ./zap/zap.sh -daemon -host 127.0.0.1 -port 8090 -config api.disablekey=true &
         sleep 30
 
     - name: Run ZAP Active Scan
