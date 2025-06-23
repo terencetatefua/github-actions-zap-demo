@@ -52,3 +52,4 @@ jobs:
       with:
         target: ${{ secrets.ZAP_TARGET_URL }}
         fail_action: true
+## added secret
